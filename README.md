@@ -10,6 +10,37 @@ Nom du package à saisir :
 com.game.kromatik_sort
 ```
 
+## Version actuelle
+
+### Nom de la version (50 caractères maximum)
+
+```text
+1.0.0 (1)
+```
+
+### Notes de version (500 caractères maximum)
+
+```text
+<fr-FR>
+Première version de Kromatik Sort !
+• Trie les couleurs : un seul coloris par tube.
+• Niveaux illimités, de 3 à 10 couleurs.
+• Score selon la difficulté : Facile, Moyen, Difficile, Expert.
+• Jusqu'à 2 indices par niveau.
+• Annulation, tube bonus et redémarrage.
+• Jouable hors ligne, sans publicité.
+</fr-FR>
+<en-US>
+First release of Kromatik Sort!
+• Sort the colors: one color per tube.
+• Unlimited levels, from 3 to 10 colors.
+• Score based on difficulty: Easy, Medium, Hard, Expert.
+• Up to 2 hints per level.
+• Undo, bonus tube and restart.
+• Playable offline, no ads.
+</en-US>
+```
+
 ## Fiche Play Store
 
 ### Brève description (80 caractères maximum)
