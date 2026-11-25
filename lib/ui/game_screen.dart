@@ -1,11 +1,14 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../core/palette.dart';
 import '../game/game_state.dart';
+import '../game/hint_solver.dart';
 import '../game/level_generator.dart';
+import '../game/scoring.dart';
 import '../services/app_prefs.dart';
 import '../services/audio_service.dart';
 import 'ambient_background.dart';
@@ -30,12 +33,22 @@ class _GameScreenState extends State<GameScreen>
   /// Délai avant la carte de victoire, pour laisser voir le dernier tube.
   static const Duration _winDelay = Duration(milliseconds: 750);
 
+  static const double _hintLineHeight = 22;
+
   static const LevelGenerator _generator = LevelGenerator();
 
   late int _level;
   late BoardController _board;
   bool _showWin = false;
-  bool _showHint = false;
+  bool _showTutorial = false;
+  bool _searchingHint = false;
+
+  /// Points gagnés sur le niveau qui vient d'être résolu.
+  int _wonPoints = 0;
+  int _wonHintsUsed = 0;
+
+  /// Coups déjà calculés pour le niveau courant (voir [findSolution]).
+  final Map<String, Move> _knownMoves = <String, Move>{};
   late bool _musicOn = widget.audio.musicOn;
   late bool _sfxOn = widget.audio.sfxOn;
 
@@ -66,7 +79,7 @@ class _GameScreenState extends State<GameScreen>
   // --- Niveaux ---------------------------------------------------------------
 
   BoardController _createBoard(int level) {
-    _showHint = level == 1;
+    _showTutorial = level == 1;
     final state = GameState(
       tubes: _generator.generate(level),
       capacity: LevelConfig.capacity,
@@ -76,6 +89,7 @@ class _GameScreenState extends State<GameScreen>
 
   void _loadLevel(int level) {
     final old = _board;
+    if (level != _level) _knownMoves.clear();
     setState(() {
       _level = level;
       _showWin = false;
@@ -106,7 +120,7 @@ class _GameScreenState extends State<GameScreen>
       case BoardEvent.select:
         audio.play(Sfx.select);
         _haptic(HapticFeedback.selectionClick);
-        if (_showHint) setState(() => _showHint = false);
+        if (_showTutorial) setState(() => _showTutorial = false);
       case BoardEvent.deselect:
       case BoardEvent.undo:
         audio.play(Sfx.deselect);
@@ -126,21 +140,91 @@ class _GameScreenState extends State<GameScreen>
       case BoardEvent.win:
         audio.play(Sfx.win);
         _haptic(HapticFeedback.heavyImpact);
-        widget.prefs.level = _level + 1;
+        _recordWin();
         Timer(_winDelay, () {
           if (mounted) setState(() => _showWin = true);
         });
     }
   }
 
-  void _showStuckMessage() {
+  void _showStuckMessage() => _showMessage(
+      'Plus de mouvement possible : annule un coup ou ajoute un tube.');
+
+  void _showMessage(String message) {
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
-      ..showSnackBar(const SnackBar(
-        content: Text('Plus de mouvement possible : annule un coup ou ajoute un tube.'),
-        duration: Duration(seconds: 3),
+      ..showSnackBar(SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 3),
         behavior: SnackBarBehavior.floating,
       ));
+  }
+
+  // --- Score et indices ------------------------------------------------------
+
+  /// Crédite les points et passe la sauvegarde au niveau suivant.
+  void _recordWin() {
+    final prefs = widget.prefs;
+    setState(() {
+      _wonHintsUsed = prefs.hintsUsed;
+      _wonPoints = Difficulty.forLevel(_level).reward(_wonHintsUsed);
+      prefs.score = prefs.score + _wonPoints;
+      prefs.hintsUsed = 0;
+      prefs.level = _level + 1;
+    });
+  }
+
+  bool get _canRequestHint =>
+      !_searchingHint &&
+      _board.canShowHint &&
+      widget.prefs.hintsUsed < kMaxHintsPerLevel;
+
+  /// L'indice n'est décompté que s'il est réellement affiché.
+  Future<void> _requestHint() async {
+    if (!_canRequestHint) return;
+    widget.audio.play(Sfx.click);
+    final board = _board;
+    final tubes = _copyTubes(board);
+    final key = positionKey(tubes);
+    setState(() => _searchingHint = true);
+    try {
+      if (!_knownMoves.containsKey(key)) {
+        // Recherche hors du fil d'affichage pour ne pas figer l'écran.
+        final solution = await compute(
+            findSolution, (tubes: tubes, capacity: board.state.capacity));
+        // Le joueur a pu jouer ou changer de niveau entre-temps.
+        final isOutdated = !mounted ||
+            board != _board ||
+            !board.canShowHint ||
+            !_hasSameTubes(board, tubes);
+        if (isOutdated) return;
+        for (final entry in solution.entries) {
+          _knownMoves.putIfAbsent(entry.key, () => entry.value);
+        }
+      }
+      final move = _knownMoves[key];
+      if (move == null) {
+        _showMessage(
+            'Aucune solution trouvée d\'ici : annule des coups ou recommence. Indice non décompté.');
+        return;
+      }
+      widget.prefs.hintsUsed = widget.prefs.hintsUsed + 1;
+      board.showHint(move);
+    } finally {
+      if (mounted) setState(() => _searchingHint = false);
+    }
+  }
+
+  List<List<int>> _copyTubes(BoardController board) =>
+      <List<int>>[for (final tube in board.state.tubes) List<int>.of(tube)];
+
+  bool _hasSameTubes(BoardController board, List<List<int>> tubes) {
+    final current = board.state.tubes;
+    if (current.length != tubes.length) return false;
+    for (var i = 0; i < tubes.length; i++) {
+      if (!listEquals(current[i], tubes[i])) return false;
+    }
+    return true;
   }
 
   // --- Réglages --------------------------------------------------------------
@@ -171,6 +255,7 @@ class _GameScreenState extends State<GameScreen>
             child: Column(
               children: [
                 _buildTopBar(),
+                _buildScorePanel(),
                 Expanded(child: _buildBoard()),
                 _buildBottomBar(),
                 const SizedBox(height: 14),
@@ -182,6 +267,9 @@ class _GameScreenState extends State<GameScreen>
               child: WinOverlay(
                 level: _level,
                 moves: _board.state.moveCount,
+                points: _wonPoints,
+                hintsUsed: _wonHintsUsed,
+                totalScore: widget.prefs.score,
                 onNext: _nextLevel,
               ),
             ),
@@ -224,6 +312,68 @@ class _GameScreenState extends State<GameScreen>
     );
   }
 
+  /// Score total, gain possible sur ce niveau et coût d'un indice.
+  Widget _buildScorePanel() {
+    final difficulty = Difficulty.forLevel(_level);
+    return ListenableBuilder(
+      listenable: _board,
+      builder: (context, _) {
+        // Après la victoire, la sauvegarde pointe déjà sur le niveau suivant.
+        final hintsUsed = _board.solved ? _wonHintsUsed : widget.prefs.hintsUsed;
+        final hintsLeft = kMaxHintsPerLevel - hintsUsed;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: _ScoreTile(
+                      label: 'SCORE',
+                      value: '${widget.prefs.score}',
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _ScoreTile(
+                      label: 'À GAGNER · ${difficulty.label.toUpperCase()}',
+                      value: '+${difficulty.reward(hintsUsed)}',
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              // Hauteur fixe : le plateau ne bouge pas quand le texte change.
+              SizedBox(
+                height: _hintLineHeight,
+                child: Center(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: _board.hint != null
+                        ? const Text(
+                            'Indice : verse le tube 1 dans le tube 2.',
+                            style: TextStyle(
+                                color: AppColors.accent,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700),
+                          )
+                        : Text(
+                            hintsLeft > 0
+                                ? 'Indices restants : $hintsLeft/$kMaxHintsPerLevel · chacun coûte ${difficulty.hintCost} points'
+                                : 'Plus d\'indice pour ce niveau',
+                            style: const TextStyle(
+                                color: AppColors.textDim, fontSize: 13),
+                          ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildBoard() {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -241,7 +391,7 @@ class _GameScreenState extends State<GameScreen>
               Positioned.fill(
                 child: CustomPaint(painter: BoardPainter(_board)),
               ),
-              if (_showHint)
+              if (_showTutorial)
                 const Positioned(
                   left: 24,
                   right: 24,
@@ -278,11 +428,49 @@ class _GameScreenState extends State<GameScreen>
           ),
           const SizedBox(width: 22),
           _RoundButton(
+            icon: Icons.lightbulb_rounded,
+            tooltip: 'Indice',
+            onTap: _canRequestHint ? _requestHint : null,
+            badge: widget.prefs.hintsUsed < kMaxHintsPerLevel
+                ? '${kMaxHintsPerLevel - widget.prefs.hintsUsed}'
+                : null,
+          ),
+          const SizedBox(width: 22),
+          _RoundButton(
             icon: Icons.add_rounded,
             tooltip: 'Ajouter un tube',
             onTap: _board.canAddTube ? _board.addTube : null,
             badge: _board.state.extraTubeUsed ? null : '1',
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Encadré affichant une valeur de score sous son intitulé.
+class _ScoreTile extends StatelessWidget {
+  const _ScoreTile({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.glass,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        children: [
+          Text(label,
+              style: const TextStyle(
+                  color: AppColors.textDim, fontSize: 11, letterSpacing: 1)),
+          Text(value,
+              style: const TextStyle(
+                  color: AppColors.accent, fontSize: 20, fontWeight: FontWeight.w800)),
         ],
       ),
     );
@@ -346,7 +534,7 @@ class _RoundButton extends StatelessWidget {
                 decoration: const BoxDecoration(color: AppColors.accent, shape: BoxShape.circle),
                 child: Text(badge!,
                     style: const TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF241B00))),
+                        fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.onAccent)),
               ),
             ),
         ],

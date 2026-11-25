@@ -5,10 +5,16 @@ abstract final class AppColors {
   static const Color bgTop = Color(0xFF2B2266);
   static const Color bgBottom = Color(0xFF0D0B22);
   static const Color accent = Color(0xFFFFD93D);
+
+  /// Texte posé sur un fond [accent].
+  static const Color onAccent = Color(0xFF241B00);
   static const Color text = Color(0xFFF4F1FF);
   static const Color textDim = Color(0xFFA9A3D6);
   static const Color glass = Color(0x1AFFFFFF);
 }
+
+/// Police des textes dessinés hors du thème (identique au reste de l'interface).
+const String kUiFontFamily = 'Roboto';
 
 /// Couleurs des liquides, indexées par l'id de couleur utilisé dans la logique.
 /// Choisies pour rester bien distinctes entre elles sur fond sombre.

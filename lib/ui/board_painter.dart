@@ -43,6 +43,8 @@ class BoardPainter extends CustomPainter {
   static const double _introStagger = 0.05;
   static const double _introDuration = 0.45;
   static const double _liquidSeamOverlap = 0.6;
+  static const double _hintBadgeRadius = 11;
+  static const double _hintBadgeGap = 4;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -60,6 +62,11 @@ class BoardPainter extends CustomPainter {
     }
     if (pour != null) {
       _drawPouring(canvas, geoms, pour, size.width);
+    }
+    final hint = board.hint;
+    if (hint != null) {
+      _drawHintBadge(canvas, geoms[hint.from], '1');
+      _drawHintBadge(canvas, geoms[hint.to], '2');
     }
   }
 
@@ -86,11 +93,36 @@ class BoardPainter extends CustomPainter {
     final amp = _idleWaveAmp + _wobbleWaveAmp * board.wobble[i];
     final complete = board.state.isComplete(i);
     final age = board.time - (board.doneAt[i] ?? -10);
-    final glow = complete
-        ? kLiquidColors[board.state.tubes[i].first]
-            .withValues(alpha: 0.3 + 0.5 * max(0.0, 1 - age / 0.9))
-        : (lift > 0.02 ? AppColors.text.withValues(alpha: 0.35 * lift) : null);
+    final hinted = board.hint?.from == i || board.hint?.to == i;
+    final glow = hinted
+        ? AppColors.accent
+        : complete
+            ? kLiquidColors[board.state.tubes[i].first]
+                .withValues(alpha: 0.3 + 0.5 * max(0.0, 1 - age / 0.9))
+            : (lift > 0.02
+                ? AppColors.text.withValues(alpha: 0.35 * lift)
+                : null);
     _drawTube(canvas, g, i, runs, pose, amp, glow);
+  }
+
+  /// Pastille sous un tube : « 1 » = tube à prendre, « 2 » = tube à remplir.
+  void _drawHintBadge(Canvas canvas, TubeGeom g, String label) {
+    final center = Offset(g.cx, g.bottom + _hintBadgeRadius + _hintBadgeGap);
+    canvas.drawCircle(center, _hintBadgeRadius, Paint()..color = AppColors.accent);
+    final text = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: const TextStyle(
+          color: AppColors.onAccent,
+          fontFamily: kUiFontFamily,
+          fontSize: 14,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    text.paint(canvas, center - Offset(text.width / 2, text.height / 2));
+    text.dispose();
   }
 
   // --- Versement -------------------------------------------------------------

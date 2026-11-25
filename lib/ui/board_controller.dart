@@ -86,6 +86,9 @@ class BoardController extends ChangeNotifier {
 
   int? selected;
   PourAnim? pour;
+
+  /// Coup conseillé à mettre en évidence, jusqu'au prochain changement.
+  Move? hint;
   bool solved = false;
   final List<double> lift = <double>[];
   final List<double> wobble = <double>[];
@@ -160,6 +163,7 @@ class BoardController extends ChangeNotifier {
       startLift: lift[from],
     );
     selected = null;
+    hint = null;
     onEvent(BoardEvent.pourStart);
   }
 
@@ -190,6 +194,7 @@ class BoardController extends ChangeNotifier {
     final move = state.undo();
     if (move == null) return;
     selected = null;
+    hint = null;
     doneAt.remove(move.to);
     wobble[move.from] = 1;
     wobble[move.to] = 1;
@@ -201,8 +206,19 @@ class BoardController extends ChangeNotifier {
   void addTube() {
     if (!canAddTube || !state.addTube()) return;
     _syncArrays();
+    hint = null;
     wobble[state.tubes.length - 1] = 1;
     onEvent(BoardEvent.addTube);
+  }
+
+  bool get canShowHint => !_locked && hint == null;
+
+  /// Met en évidence [move] ; la sélection en cours est abandonnée.
+  void showHint(Move move) {
+    selected = null;
+    hint = move;
+    wobble[move.from] = 1;
+    wobble[move.to] = 1;
   }
 
   @override

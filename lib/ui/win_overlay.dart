@@ -10,11 +10,19 @@ class WinOverlay extends StatefulWidget {
     super.key,
     required this.level,
     required this.moves,
+    required this.points,
+    required this.hintsUsed,
+    required this.totalScore,
     required this.onNext,
   });
 
   final int level;
   final int moves;
+
+  /// Points gagnés sur ce niveau, pénalités d'indices déduites.
+  final int points;
+  final int hintsUsed;
+  final int totalScore;
   final VoidCallback onNext;
 
   @override
@@ -60,6 +68,12 @@ class _WinOverlayState extends State<WinOverlay>
     );
   }
 
+  String _hintSummary() => switch (widget.hintsUsed) {
+        0 => 'Sans indice',
+        1 => '1 indice utilisé (pénalité déduite)',
+        final count => '$count indices utilisés (pénalités déduites)',
+      };
+
   Widget _card() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 36),
@@ -82,6 +96,16 @@ class _WinOverlayState extends State<WinOverlay>
           const SizedBox(height: 4),
           Text('${widget.moves} coups',
               style: const TextStyle(fontSize: 14, color: AppColors.textDim)),
+          const SizedBox(height: 16),
+          Text('+${widget.points} points',
+              style: const TextStyle(
+                  fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.text)),
+          const SizedBox(height: 4),
+          Text(_hintSummary(),
+              style: const TextStyle(fontSize: 14, color: AppColors.textDim)),
+          const SizedBox(height: 4),
+          Text('Score total : ${widget.totalScore}',
+              style: const TextStyle(fontSize: 17, color: AppColors.accent)),
           const SizedBox(height: 22),
           FilledButton(
             onPressed: widget.onNext,
@@ -89,7 +113,10 @@ class _WinOverlayState extends State<WinOverlay>
               backgroundColor: AppColors.accent,
               foregroundColor: const Color(0xFF241B00),
               padding: const EdgeInsets.symmetric(horizontal: 34, vertical: 14),
-              textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+              textStyle: const TextStyle(
+                  fontFamily: kUiFontFamily,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800),
               shape: const StadiumBorder(),
             ),
             child: const Text('Niveau suivant'),
