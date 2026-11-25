@@ -1,4 +1,4 @@
-package com.game.kromatik_sort
+package com.game.kromatic_sort
 
 import io.flutter.embedding.android.FlutterActivity
 

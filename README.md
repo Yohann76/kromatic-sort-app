@@ -4,10 +4,12 @@ A new Flutter project.
 
 ## Play Console
 
+Nom: Kromatik Sort
+
 Nom du package à saisir :
 
 ```
-com.game.kromatik_sort
+com.game.kromatic_sort
 ```
 
 ## Version actuelle
